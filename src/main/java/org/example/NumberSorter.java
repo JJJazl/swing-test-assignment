@@ -23,6 +23,7 @@ import java.awt.FlowLayout;
 import java.awt.RenderingHints;
 import java.awt.event.ActionListener;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ExecutorService;
@@ -49,15 +50,18 @@ public class NumberSorter extends JFrame {
     public static final String ARIAL_FONT = "Arial";
     public static final int MAX_NUMBERS_PER_COLUMN = 10;
 
+    /**
+     * Fixed thread pool for managing the sorting task
+     */
     private ExecutorService executorService;
-
-    private final List<JButton> numButtons = new ArrayList<>();
+    private List<JButton> numButtons = new ArrayList<>();
 
     private JPanel introPanel;
     private JPanel sortPanel;
     private JTextField numberInput;
     private JPanel numbersPanel;
     private boolean isDescending = false;
+    private boolean isInSortingProgress = false;
     private int[] numbers;
 
     /**
@@ -234,7 +238,7 @@ public class NumberSorter extends JFrame {
      */
     private void updateNumbersDisplay() {
         numbersPanel.removeAll();
-        numButtons.clear();  // Clear the list before adding new buttons
+        numButtons = new ArrayList<>();  // Clear the list before adding new buttons
         int columns = (numbers.length + 9) / MAX_NUMBERS_PER_COLUMN;
         JPanel[] columnPanels = new JPanel[columns];
 
@@ -251,11 +255,16 @@ public class NumberSorter extends JFrame {
 
             final int index = i;
             numButton.addActionListener(event -> {
-                if (numbers[index] <= MAX_SMALL_NUMBER) {
-                    generateNumbers(numbers[index]);
-                } else {
+                if (isInSortingProgress) {
                     JOptionPane.showMessageDialog(this,
-                            "Please select a value smaller or equal to 30.");
+                            "Please wait, sorting in progress");
+                } else {
+                    if (numbers[index] <= MAX_SMALL_NUMBER) {
+                        generateNumbers(numbers[index]);
+                    } else {
+                        JOptionPane.showMessageDialog(this,
+                                "Please select a value smaller or equal to 30.");
+                    }
                 }
             });
 
@@ -293,17 +302,20 @@ public class NumberSorter extends JFrame {
      * The updateNumbersDisplay() method is called to update the display with the new sorting state.
      */
     private void startSortingWithExecutor() {
-        // Create a fixed thread pool for managing the sorting task
-        executorService = Executors.newSingleThreadExecutor();
+        if (isInSortingProgress) {
+            JOptionPane.showMessageDialog(this,
+                    "Please wait, sorting in progress");
+        } else {
+            isInSortingProgress = true;
+            // Submit the sorting task to the executor
+            executorService.submit(() -> {
+                isDescending = !isDescending;
 
-        // Submit the sorting task to the executor
-        executorService.submit(() -> {
-            isDescending = !isDescending;
-
-            // Start the quicksort with periodic updates
-            quickSort(0, numbers.length - 1);
-        });
-        shutdownExecutor();
+                // Start the quicksort with periodic updates
+                quickSort(0, numbers.length - 1);
+                isInSortingProgress = false;
+            });
+        }
     }
 
     /**
@@ -325,14 +337,7 @@ public class NumberSorter extends JFrame {
 
         int leftPointer = partition(low, high, pivot);
 
-        // Publish the updated numbers array to the UI
-        // Update the display from the Event Dispatch Thread
-        SwingUtilities.invokeLater(() -> {
-            numbersPanel.revalidate();
-            numbersPanel.repaint();
-        });
-
-        sleep(500);
+        sleep(300);
 
         // Recurse on the left and right parts
         quickSort(low, leftPointer - 1);
@@ -396,27 +401,29 @@ public class NumberSorter extends JFrame {
      */
     private void swap(int i, int j) {
         // Get the buttons at indices i and j
-        JButton button1 = numButtons.get(i);
-        JButton button2 = numButtons.get(j);
-//
+        JButton buttonI = numButtons.get(i);
+        JButton buttonJ = numButtons.get(j);
+
         SwingUtilities.invokeLater(() -> {
-            button1.setForeground(Color.RED);
-            button2.setForeground(Color.RED);
+            buttonI.setForeground(Color.RED);
+            buttonJ.setForeground(Color.RED);
         });
 
-        sleep(1500);
+        sleep(300);
 
         int temp = numbers[i];
         numbers[i] = numbers[j];
         numbers[j] = temp;
 
         SwingUtilities.invokeLater(() -> {
-            button1.setForeground(Color.WHITE);
-            button2.setForeground(Color.WHITE);
-            updateNumbersDisplay();
+            buttonI.setText(String.valueOf(numbers[i]));
+            buttonJ.setText(String.valueOf(numbers[j]));
+
+            buttonI.setForeground(Color.WHITE);
+            buttonJ.setForeground(Color.WHITE);
         });
 
-        sleep(1500);
+        sleep(300);
     }
 
     private static void sleep(int millis) {
@@ -437,6 +444,7 @@ public class NumberSorter extends JFrame {
         getContentPane().add(sortPanel);
         revalidate();
         repaint();
+        executorService = Executors.newSingleThreadExecutor();
     }
 
     /**
@@ -450,6 +458,10 @@ public class NumberSorter extends JFrame {
         numberInput.setText("");
         revalidate();
         repaint();
+        shutdownExecutor();
+        isInSortingProgress = false;
+        numbers = new int[0];
+        numButtons = Collections.emptyList();
     }
 
     public static void main(String[] args) {
